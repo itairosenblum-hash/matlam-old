@@ -135,6 +135,7 @@ function route(req) {
 
   if (action === 'reApplySwap') return withAudit(user, 'ביצוע חוזר של החלפה', String(req.id||''), actionReApplySwap(req));
   if (action === 'fixV2Score') return withAudit(user, 'תיקון ניקוד', String(req.month||'') + ' ' + String(req.name||'') + (auditFields({'ניקוד':req.score!==undefined?('+'+req.score):undefined, 'סוג':req.dutyType}) ? ' | ' + auditFields({'ניקוד':req.score!==undefined?('+'+req.score):undefined, 'סוג':req.dutyType}) : ''), actionFixV2Score(req));
+  if (action === 'adjustScore') return withAudit(user, (Number(req.score) > 0 ? '➕ תגמול ניקוד' : '➖ קנס ניקוד'), String(req.personName||'') + ' | ' + auditFields({'ניקוד': req.score!==undefined?((Number(req.score)>0?'+':'')+req.score):undefined, 'סיבה': req.reason}), actionAdjustScore(req));
   if (action === 'sendSchedule') return actionSendSchedule(req);
   if (action === 'sendAdminMessage') return actionSendAdminMessage(req);
   if (action === 'debugSwap') return actionDebugSwap(req);
@@ -3007,6 +3008,41 @@ function actionFixV2Score(req) {
     }
   }
   return {success:false, error: 'לא נמצא: '+personName};
+}
+
+// ===== תגמול / קנס ידני מעמוד הניקוד =====
+// Free-form admin adjustment to any torani's total score (positive = bonus,
+// negative = penalty). A reason is mandatory so the audit log always explains
+// why the number moved — unlike fixV2Score, this isn't tied to a schedule cell
+// or a duty type, so it writes straight to the running total (col D) for the
+// current active year.
+function actionAdjustScore(req) {
+  var personName = String(req.personName || '').trim();
+  var reason = String(req.reason || '').trim();
+  var numScore = Number(req.score);
+
+  if (!personName) return {success:false, error:'חסר שם תורן'};
+  if (!reason) return {success:false, error:'חובה למלא סיבה/הערה'};
+  if (!numScore) return {success:false, error:'יש להזין ניקוד שונה מאפס'};
+
+  // Mirrors actionGetScores: an explicit ?year= targets that year's sheet
+  // (so a bonus/penalty given while viewing a past/future year on the scores
+  // page lands in the right Scores_YYYY tab), else the active year.
+  var targetYear = /^\d{4}$/.test(String(req.year || '')) ? String(req.year) : getActiveScoreYear();
+  var scoreSheet = getScoresSheet(targetYear);
+  var rows = scoreSheet.getDataRange().getValues();
+
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === personName) {
+      var cur = Number(rows[i][3]) || 0;
+      var newVal = cur + numScore;
+      scoreSheet.getRange(i+1, 4).setValue(newVal);
+      var sign = numScore > 0 ? '+' : '';
+      Logger.log('adjustScore: ' + personName + ' ' + cur + ' -> ' + newVal + ' (' + reason + ')');
+      return {success:true, message: personName + ' קיבל ' + sign + numScore + ' ניקוד (היה: ' + cur + ', עכשיו: ' + newVal + ') | סיבה: ' + reason};
+    }
+  }
+  return {success:false, error: 'לא נמצא תורן בשם: ' + personName};
 }
 
 // ===== סנכרון ניקוד - מחשב מחדש מכל הלוחות ומעדכן גיליון Scores =====
