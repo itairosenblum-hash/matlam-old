@@ -1117,6 +1117,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
           </div>
           <button class="btn btn-secondary btn-sm" onclick="loadScores()">🔄 רענן</button>
           <button class="btn btn-secondary btn-sm" onclick="printScores()">🖨️ הדפס PDF</button>
+          <button class="btn btn-secondary btn-sm" onclick="openAdjustScoreModal()">🎯 תגמול / קנס</button>
         </div>
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input id="scores-search" type="text" placeholder="🔍 חיפוש תורן..." oninput="filterScores(this.value)"
@@ -1665,7 +1666,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">18/08/2026 07:43</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">24/08/2026 20:27</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1678,8 +1679,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '18/08/2026 07:43';
-const BUILD_EPOCH = 1787028208474; // ms — when this exact file was pushed
+const BUILD_STAMP = '24/08/2026 20:27';
+const BUILD_EPOCH = 1787592454295; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -6067,6 +6068,44 @@ async function sendAdminMessage() {
   alert(res.success ? '✅ ' + res.message : '❌ ' + (res.error||'שגיאה'));
 }
 
+function openAdjustScoreModal() {
+  const sel = document.getElementById('adjust-score-name');
+  sel.innerHTML = '<option value="">— בחר תורן —</option>';
+  // Names come from the currently-loaded scores table (same list/year the admin
+  // is looking at) so the dropdown never shows someone who isn't even in it;
+  // fall back to allPeople if the scores table hasn't loaded yet for some reason.
+  const cached = (window._allScoresData && window._allScoresData.all) || [];
+  const names = cached.length
+    ? cached.map(s => s.name).slice().sort((a,b) => a.localeCompare(b, 'he'))
+    : allPeople.filter(p => p.activity !== '0').map(p => p.name).sort((a,b) => a.localeCompare(b, 'he'));
+  names.forEach(n => sel.add(new Option(n, n)));
+  document.getElementById('adjust-score-type').value = '1';
+  document.getElementById('adjust-score-amount').value = '';
+  document.getElementById('adjust-score-reason').value = '';
+  document.getElementById('adjust-score-alert').innerHTML = '';
+  openModal('modal-adjust-score');
+}
+
+async function submitScoreAdjustment() {
+  const personName = document.getElementById('adjust-score-name').value;
+  const sign = Number(document.getElementById('adjust-score-type').value) || 1;
+  const amount = Number(document.getElementById('adjust-score-amount').value);
+  const reason = document.getElementById('adjust-score-reason').value.trim();
+
+  if (!personName) return showAlert('adjust-score-alert', 'בחר תורן', 'error');
+  if (!amount || amount <= 0) return showAlert('adjust-score-alert', 'הזן כמות נקודות גדולה מאפס', 'error');
+  if (!reason) return showAlert('adjust-score-alert', 'חובה למלא סיבה/הערה', 'error');
+
+  const score = sign * Math.abs(amount);
+  showLoading(true);
+  const res = await api({action:'adjustScore', personName, score, reason, year: window._scoreYear});
+  showLoading(false);
+  if (!res.success) return showAlert('adjust-score-alert', res.error || 'שגיאה', 'error');
+  closeModal('modal-adjust-score');
+  alert('✅ ' + res.message);
+  loadScores();
+}
+
 async function fixV2ScoreManually() {
   const v2 = document.getElementById('edit-v2')?.value;
   const dutyType = document.getElementById('edit-dutytype')?.value;
@@ -6797,6 +6836,45 @@ async function saveDutySettings() {
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="sendAdminMessage()">📣 שלח</button>
       <button class="btn btn-secondary" onclick="closeModal('modal-admin-message')">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: תגמול / קנס ניקוד -->
+<div id="modal-adjust-score" class="modal-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">🎯 תגמול / קנס ניקוד</div>
+      <button class="modal-close" onclick="closeModal('modal-adjust-score')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="adjust-score-alert"></div>
+      <div class="form-group">
+        <label>תורן</label>
+        <select id="adjust-score-name" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;color:var(--text);font-family:inherit;outline:none">
+          <option value="">— בחר תורן —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>סוג</label>
+        <select id="adjust-score-type" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;color:var(--text);font-family:inherit;outline:none">
+          <option value="1">➕ תגמול (הוספת נקודות)</option>
+          <option value="-1">➖ קנס (הפחתת נקודות)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>כמות נקודות</label>
+        <input id="adjust-score-amount" type="number" min="1" step="1" placeholder="לדוגמה: 10">
+      </div>
+      <div class="form-group">
+        <label>סיבה / הערה <span style="color:var(--danger)">*</span></label>
+        <input id="adjust-score-reason" type="text" placeholder="לדוגמה: החליף תורנות ברגע האחרון">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">חובה למלא — יופיע ביומן הפעולות</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submitScoreAdjustment()">✔ בצע</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-adjust-score')">ביטול</button>
     </div>
   </div>
 </div>
