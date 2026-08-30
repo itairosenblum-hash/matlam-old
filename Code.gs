@@ -115,6 +115,32 @@ function route(req) {
   if (action === 'updateSwap') return withAudit(user, 'עדכון החלפה: ' + String(req.status||''), 'בקשה ' + String(req.id||''), actionUpdateSwap(req, user));
   if (action === 'deleteSwap' && user.role === 'admin') return withAudit(user, 'מחיקת בקשת החלפה', String(req.id||''), actionDeleteSwap(req));
 
+  // updateTorani: admins may edit anyone with any field (handled below, past the
+  // admin gate). Regular users may reach it too, but ONLY on their own record and
+  // ONLY for self-service fields — role/activity/dutyCategory/active/newPassword
+  // are silently dropped even if present in the request, so a tampered client
+  // payload can never use this action to escalate privileges or reactivate/
+  // deactivate/recategorize the account. Status and category stay admin-only,
+  // matching the note already shown in the profile UI.
+  if (action === 'updateTorani' && user.role !== 'admin') {
+    if (String(req.username || '') !== String(user.username || '')) {
+      return {success: false, error: 'ניתן לערוך רק את הפרטים שלך'};
+    }
+    var selfReq = {
+      username: user.username,
+      phone: req.phone,
+      email: req.email,
+      endDate: req.endDate,
+      weekendType: req.weekendType,
+      isMilitaryVehicle: req.isMilitaryVehicle,
+      vehicleCompany: req.vehicleCompany,
+      vehicleModel: req.vehicleModel,
+      vehicleColor: req.vehicleColor,
+      vehiclePlate: req.vehiclePlate
+    };
+    return withAudit(user, 'עדכון פרופיל עצמי', String(user.username||'') + (auditFields({'טלפון':selfReq.phone, 'אימייל':selfReq.email, 'סיום שירות':selfReq.endDate, 'סופ"ש':selfReq.weekendType, 'רכב צבאי':selfReq.isMilitaryVehicle, 'לוחית זיהוי':selfReq.isMilitaryVehicle==='כן'?selfReq.vehiclePlate:undefined}) ? ' | ' + auditFields({'טלפון':selfReq.phone, 'אימייל':selfReq.email, 'סיום שירות':selfReq.endDate, 'סופ"ש':selfReq.weekendType, 'רכב צבאי':selfReq.isMilitaryVehicle, 'לוחית זיהוי':selfReq.isMilitaryVehicle==='כן'?selfReq.vehiclePlate:undefined}) : ''), actionUpdateTorani(selfReq));
+  }
+
   // Admin only
   if (user.role !== 'admin') return {success: false, error: 'אין הרשאת מנהל', code: 403};
   if (action === 'getUsers') return actionGetUsers();
