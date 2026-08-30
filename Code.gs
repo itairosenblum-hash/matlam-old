@@ -141,8 +141,8 @@ function route(req) {
   if (action === 'debugSwap') return actionDebugSwap(req);
   if (action === 'resetPassword' && user.role === 'admin') return withAudit(user, 'איפוס סיסמה', String(req.username||''), actionResetPassword(req));
   if (action === 'getAllTornim') return actionGetAllTornim();
-  if (action === 'addTorani') return withAudit(user, 'הוספת תורן', String(req.name||'') + ' | ' + auditFields({'תפקיד':req.role||'user', 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'סיום שירות':req.endDate}), actionAddTorani(req));
-  if (action === 'updateTorani') return withAudit(user, 'עריכת תורן', String(req.username||'') + (auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'טלפון':req.phone, 'אימייל':req.email, 'סיום שירות':req.endDate, 'פעיל':req.active!==undefined?(req.active?'כן':'לא'):undefined, 'סיסמה':req.newPassword?'שונתה':undefined}) ? ' | ' + auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'טלפון':req.phone, 'אימייל':req.email, 'סיום שירות':req.endDate, 'פעיל':req.active!==undefined?(req.active?'כן':'לא'):undefined, 'סיסמה':req.newPassword?'שונתה':undefined}) : ''), actionUpdateTorani(req));
+  if (action === 'addTorani') return withAudit(user, 'הוספת תורן', String(req.name||'') + ' | ' + auditFields({'תפקיד':req.role||'user', 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'סיום שירות':req.endDate, 'רכב צבאי':req.isMilitaryVehicle, 'לוחית זיהוי':req.isMilitaryVehicle==='כן'?req.vehiclePlate:undefined}), actionAddTorani(req));
+  if (action === 'updateTorani') return withAudit(user, 'עריכת תורן', String(req.username||'') + (auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'טלפון':req.phone, 'אימייל':req.email, 'סיום שירות':req.endDate, 'פעיל':req.active!==undefined?(req.active?'כן':'לא'):undefined, 'סיסמה':req.newPassword?'שונתה':undefined, 'רכב צבאי':req.isMilitaryVehicle, 'לוחית זיהוי':req.isMilitaryVehicle==='כן'?req.vehiclePlate:undefined}) ? ' | ' + auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'פעילות':req.activity, 'קטגוריה':req.dutyCategory, 'סופ"ש':req.weekendType, 'טלפון':req.phone, 'אימייל':req.email, 'סיום שירות':req.endDate, 'פעיל':req.active!==undefined?(req.active?'כן':'לא'):undefined, 'סיסמה':req.newPassword?'שונתה':undefined, 'רכב צבאי':req.isMilitaryVehicle, 'לוחית זיהוי':req.isMilitaryVehicle==='כן'?req.vehiclePlate:undefined}) : ''), actionUpdateTorani(req));
   if (action === 'toggleTorani') return withAudit(user, 'הפעלה/השבתה של תורן', String(req.username||''), actionToggleTorani(req));
   if (action === 'deleteTorani') return withAudit(user, 'מחיקת תורן', String(req.username||''), actionDeleteTorani(req));
   if (action === 'updateScheduleEntry') return withAudit(user, 'עריכת לוח ידנית', String(req.month||'') + ' ' + String(req.date||'') + (auditFields({'מבצע':req.v!==undefined?(req.v||'-'):undefined, 'עתודה א':req.a!==undefined?(req.a||'-'):undefined, 'עתודה ב':req.b!==undefined?(req.b||'-'):undefined, 'סוג תורנות':req.dutyType, 'חניך':req.trainee!==undefined?(req.trainee||'-'):undefined, 'הערה':req.notes}) ? ' | ' + auditFields({'מבצע':req.v!==undefined?(req.v||'-'):undefined, 'עתודה א':req.a!==undefined?(req.a||'-'):undefined, 'עתודה ב':req.b!==undefined?(req.b||'-'):undefined, 'סוג תורנות':req.dutyType, 'חניך':req.trainee!==undefined?(req.trainee||'-'):undefined, 'הערה':req.notes}) : ''), actionUpdateScheduleEntry(req));
@@ -343,7 +343,8 @@ function actionGetPeople() {
   const rows = getSheet(SH.PEOPLE).getDataRange().getValues();
   const people = [];
   for (let i = 1; i < rows.length; i++) {
-    const [name, activity, dutyCategory, phone, weekendType, email, endDate] = rows[i];
+    const [name, activity, dutyCategory, phone, weekendType, email, endDate,
+      isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate] = rows[i];
     if (name) people.push({
       name: String(name),
       activity: String(activity),
@@ -351,10 +352,30 @@ function actionGetPeople() {
       phone: String(phone || ''),
       weekendType: String(weekendType || 'מלא'),
       email: String(email || ''),
-      endDate: endDate ? (endDate instanceof Date ? Utilities.formatDate(endDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(endDate).split('T')[0]) : ''
+      endDate: endDate ? (endDate instanceof Date ? Utilities.formatDate(endDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(endDate).split('T')[0]) : '',
+      isMilitaryVehicle: String(isMilitaryVehicle || '') === 'כן' ? 'כן' : 'לא',
+      vehicleCompany: String(vehicleCompany || ''),
+      vehicleModel: String(vehicleModel || ''),
+      vehicleColor: String(vehicleColor || ''),
+      vehiclePlate: String(vehiclePlate || '')
     });
   }
   return {success: true, people};
+}
+
+// A vehicle's company/model/color/plate are only meaningful when the torani
+// actually has a military vehicle — if not, the sub-fields are cleared server-side
+// too (not just hidden in the UI), so stale data never lingers after the toggle
+// is switched off.
+function normalizeVehicleFields(req) {
+  const isMilitary = String(req.isMilitaryVehicle || '') === 'כן';
+  return {
+    isMilitaryVehicle: isMilitary ? 'כן' : 'לא',
+    vehicleCompany: isMilitary ? String(req.vehicleCompany || '').trim() : '',
+    vehicleModel: isMilitary ? String(req.vehicleModel || '').trim() : '',
+    vehicleColor: isMilitary ? String(req.vehicleColor || '').trim() : '',
+    vehiclePlate: isMilitary ? String(req.vehiclePlate || '').trim() : ''
+  };
 }
 
 function actionUpdatePerson(req) {
@@ -1546,7 +1567,8 @@ function actionGetAllTornim() {
   // Build people map by name
   const peopleMap = {};
   for (let i = 1; i < peopleRows.length; i++) {
-    const [name, activity, dutyCategory, phone, weekendType, email, endDate] = peopleRows[i];
+    const [name, activity, dutyCategory, phone, weekendType, email, endDate,
+      isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate] = peopleRows[i];
     if (name) peopleMap[String(name)] = {
       activity: String(activity || '1'),
       dutyCategory: String(dutyCategory || ''),
@@ -1554,6 +1576,11 @@ function actionGetAllTornim() {
       weekendType: String(weekendType || 'מלא'),
       email: String(email || ''),
       endDate: endDate ? (endDate instanceof Date ? Utilities.formatDate(endDate, Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(endDate).split('T')[0]) : '',
+      isMilitaryVehicle: String(isMilitaryVehicle || '') === 'כן' ? 'כן' : 'לא',
+      vehicleCompany: String(vehicleCompany || ''),
+      vehicleModel: String(vehicleModel || ''),
+      vehicleColor: String(vehicleColor || ''),
+      vehiclePlate: String(vehiclePlate || ''),
       peopleRow: i + 1
     };
   }
@@ -1572,6 +1599,11 @@ function actionGetAllTornim() {
       email: p.email || '',
       weekendType: p.weekendType || 'מלא',
       endDate: p.endDate || '',
+      isMilitaryVehicle: p.isMilitaryVehicle || 'לא',
+      vehicleCompany: p.vehicleCompany || '',
+      vehicleModel: p.vehicleModel || '',
+      vehicleColor: p.vehicleColor || '',
+      vehiclePlate: p.vehiclePlate || '',
       hasPeopleEntry: !!peopleMap[String(name)]
     });
   }
@@ -1642,6 +1674,7 @@ function actionAddTorani(req) {
   ]);
 
   // Add/update People
+  const vf = normalizeVehicleFields(req);
   const peopleSheet = getSheet(SH.PEOPLE);
   const peopleRows = peopleSheet.getDataRange().getValues();
   let found = false;
@@ -1652,11 +1685,13 @@ function actionAddTorani(req) {
       peopleSheet.getRange(i+1,4).setValue(phone || '');
       peopleSheet.getRange(i+1,5).setValue(weekendType || 'מלא');
       if (endDate !== undefined) peopleSheet.getRange(i+1,7).setValue(endDate || '');
+      peopleSheet.getRange(i+1,8,1,5).setValues([[vf.isMilitaryVehicle, vf.vehicleCompany, vf.vehicleModel, vf.vehicleColor, vf.vehiclePlate]]);
       found = true; break;
     }
   }
   if (!found) {
-    peopleSheet.appendRow([name, activity||'1', dutyCategory||'', phone||'', weekendType||'מלא', email||'', endDate||'']);
+    peopleSheet.appendRow([name, activity||'1', dutyCategory||'', phone||'', weekendType||'מלא', email||'', endDate||'',
+      vf.isMilitaryVehicle, vf.vehicleCompany, vf.vehicleModel, vf.vehicleColor, vf.vehiclePlate]);
   }
 
   // Set starting score = average of all active tornim (fair entry into rotation)
@@ -1742,7 +1777,7 @@ function calcAverageScore() {
 }
 
 function actionUpdateTorani(req) {
-  const {username, role, newPassword, activity, dutyCategory, phone, weekendType, email, active, endDate} = req;
+  const {username, role, newPassword, activity, dutyCategory, phone, weekendType, email, active, endDate, isMilitaryVehicle} = req;
   // Strip geresh/apostrophes from names — they break single-quoted JS strings and HTML attributes
   const name = req.name ? String(req.name).replace(/['\u05f3\u2019]/g, '').trim() : req.name;
   if (!username) return {success: false, error: 'חסר שם משתמש'};
@@ -1776,11 +1811,20 @@ function actionUpdateTorani(req) {
       if (weekendType !== undefined) peopleSheet.getRange(i+1,5).setValue(weekendType);
       if (email !== undefined) peopleSheet.getRange(i+1,6).setValue(email);
       if (endDate !== undefined) peopleSheet.getRange(i+1,7).setValue(endDate);
+      // Only touch the vehicle columns when the vehicle form was actually part of
+      // this submission — most updateTorani calls (phone-only, weekend-only,
+      // password reset...) don't include isMilitaryVehicle and must leave it alone.
+      if (isMilitaryVehicle !== undefined) {
+        const vf = normalizeVehicleFields(req);
+        peopleSheet.getRange(i+1,8,1,5).setValues([[vf.isMilitaryVehicle, vf.vehicleCompany, vf.vehicleModel, vf.vehicleColor, vf.vehiclePlate]]);
+      }
       found = true; break;
     }
   }
   if (!found && lookupName) {
-    peopleSheet.appendRow([name||lookupName, activity||'1', dutyCategory||'', phone||'', weekendType||'מלא', email||'', endDate||'']);
+    const vf = normalizeVehicleFields(req);
+    peopleSheet.appendRow([name||lookupName, activity||'1', dutyCategory||'', phone||'', weekendType||'מלא', email||'', endDate||'',
+      vf.isMilitaryVehicle, vf.vehicleCompany, vf.vehicleModel, vf.vehicleColor, vf.vehiclePlate]);
   }
 
   return {success: true};
