@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2d4a3e">
 <link rel="icon" type="image/png" href="https://itairosenblum-hash.github.io/matlam/SemelMatzad_Color.svg.png">
@@ -1725,7 +1724,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">30/08/2026 18:18</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">30/08/2026 18:24</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1738,8 +1737,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '30/08/2026 18:18';
-const BUILD_EPOCH = 1788103118236; // ms — when this exact file was pushed
+const BUILD_STAMP = '30/08/2026 18:24';
+const BUILD_EPOCH = 1788103489412; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -3172,14 +3171,39 @@ async function exportTornimPDF() {
 // =====================================================
 // VEHICLES EXCEL REPORT
 // =====================================================
+// The SheetJS library (~900KB minified — far heavier than jsPDF/html2canvas) is
+// NOT loaded up front in <head> anymore: it used to block first paint for every
+// user on every page load, just to support this one occasional admin export.
+// It's now fetched once, lazily, only the first time this button is clicked.
+const _loadedScripts = {};
+function loadScriptOnce(src) {
+  if (_loadedScripts[src]) return _loadedScripts[src];
+  _loadedScripts[src] = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => { delete _loadedScripts[src]; reject(new Error('טעינת ספרייה נכשלה: ' + src)); };
+    document.head.appendChild(s);
+  });
+  return _loadedScripts[src];
+}
+
 async function exportVehiclesExcel() {
-  if (typeof XLSX === 'undefined') {
-    alert('ספריית האקסל לא נטענה כראוי, רענן את הדף ונסה שוב');
-    return;
-  }
   const btn = document.getElementById('vehicles-excel-btn');
   const btnOrig = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מכין דוח...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ טוען ספרייה...'; }
+
+  if (typeof XLSX === 'undefined') {
+    try {
+      await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    } catch (e) {
+      alert('שגיאה בטעינת ספריית האקסל — בדוק חיבור לאינטרנט ונסה שוב');
+      if (btn) { btn.disabled = false; btn.innerHTML = btnOrig; }
+      return;
+    }
+  }
+
+  if (btn) btn.innerHTML = '⏳ מכין דוח...';
 
   try {
     let data = window._allTornimData;
