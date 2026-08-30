@@ -998,6 +998,38 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
             <button class="btn btn-primary" style="width:100%" onclick="saveDutySettings()">💾 שמור</button>
           </div>
 
+          <!-- פרטי רכב -->
+          <div class="card">
+            <div class="card-title">🚗 פרטי רכב</div>
+            <div id="vehicle-alert" style="margin-bottom:8px"></div>
+            <div class="form-group">
+              <label>האם מגיע ברכב צבאי?</label>
+              <select id="profile-vehicle-military" onchange="toggleVehicleFields('profile-')" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;color:var(--text);font-family:inherit;outline:none">
+                <option value="לא">לא</option>
+                <option value="כן">כן</option>
+              </select>
+            </div>
+            <div id="profile-vehicle-fields" style="display:none">
+              <div class="form-group">
+                <label>חברת הרכב</label>
+                <input id="profile-vehicle-company" type="text" placeholder="לדוגמה: טויוטה">
+              </div>
+              <div class="form-group">
+                <label>דגם</label>
+                <input id="profile-vehicle-model" type="text" placeholder="לדוגמה: קורולה">
+              </div>
+              <div class="form-group">
+                <label>צבע</label>
+                <input id="profile-vehicle-color" type="text" placeholder="לדוגמה: לבן">
+              </div>
+              <div class="form-group">
+                <label>לוחית זיהוי</label>
+                <input id="profile-vehicle-plate" type="text" placeholder="לדוגמה: 12-345-67">
+              </div>
+            </div>
+            <button class="btn btn-primary" style="width:100%" onclick="saveVehicleDetails()">💾 שמור</button>
+          </div>
+
           <!-- היסטוריה + סיסמה -->
           <div class="card" id="profile-history-card" style="display:flex;flex-direction:column;gap:10px">
             <button class="btn btn-secondary" onclick="openToraniHistory(currentUser.name)" style="width:100%;text-align:center">📖 היסטוריית התורנויות שלי</button>
@@ -1541,6 +1573,31 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
         <label>תאריך סיום שירות 📅 <span class="text-muted text-sm">(אופציונלי)</span></label>
         <input id="t-enddate" type="text" placeholder="dd/mm/yyyy" maxlength="10" oninput="maskDateInput(this)">
       </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>🚗 האם מגיע ברכב צבאי?</label>
+        <select id="t-vehicle-military" onchange="toggleVehicleFields('t-')">
+          <option value="לא">לא</option>
+          <option value="כן">כן</option>
+        </select>
+      </div>
+      <div id="t-vehicle-fields" style="display:none;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>חברת הרכב</label>
+          <input id="t-vehicle-company" type="text" placeholder="לדוגמה: טויוטה">
+        </div>
+        <div class="form-group">
+          <label>דגם</label>
+          <input id="t-vehicle-model" type="text" placeholder="לדוגמה: קורולה">
+        </div>
+        <div class="form-group">
+          <label>צבע</label>
+          <input id="t-vehicle-color" type="text" placeholder="לדוגמה: לבן">
+        </div>
+        <div class="form-group">
+          <label>לוחית זיהוי</label>
+          <input id="t-vehicle-plate" type="text" placeholder="לדוגמה: 12-345-67">
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-add-torani')">ביטול</button>
@@ -1666,7 +1723,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">24/08/2026 20:27</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">30/08/2026 16:40</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1679,8 +1736,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '24/08/2026 20:27';
-const BUILD_EPOCH = 1787592454295; // ms — when this exact file was pushed
+const BUILD_STAMP = '30/08/2026 16:40';
+const BUILD_EPOCH = 1788097230307; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -2942,6 +2999,7 @@ async function loadUsers() { // keep name for tab switching
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:${catColor(cat)};font-weight:600">${cat}</span>
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">${wkd}</span>
+        ${t.isMilitaryVehicle === 'כן' ? `<span style="background:rgba(46,160,67,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600" title="${(t.vehicleCompany||'')} ${(t.vehicleModel||'')} ${(t.vehicleColor||'')} • ${(t.vehiclePlate||'')}">🚗 רכב צבאי</span>` : ''}
         ${t.role === 'admin' ? '<span style="background:rgba(56,139,253,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600">מנהל</span>' : ''}
         ${t.phone ? `<span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">📱 ${formatPhoneDisplay(t.phone)}</span>` : ''}
         ${t.endDate ? `<span
@@ -3152,6 +3210,7 @@ function filterTornim(query) {
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:${catColor(cat)};font-weight:600">${cat}</span>
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">${wkd}</span>
+        ${t.isMilitaryVehicle === 'כן' ? `<span style="background:rgba(46,160,67,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600" title="${(t.vehicleCompany||'')} ${(t.vehicleModel||'')} ${(t.vehicleColor||'')} • ${(t.vehiclePlate||'')}">🚗 רכב צבאי</span>` : ''}
         ${t.role === 'admin' ? '<span style="background:rgba(56,139,253,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600">מנהל</span>' : ''}
         ${t.phone ? `<span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">📱 ${formatPhoneDisplay(t.phone)}</span>` : ''}
         ${t.endDate ? `<span
@@ -3232,6 +3291,7 @@ function filterTornimByCategory(kind) {
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:${catColor(cat)};font-weight:600">${cat}</span>
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">${wkd}</span>
+        ${t.isMilitaryVehicle === 'כן' ? `<span style="background:rgba(46,160,67,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600" title="${(t.vehicleCompany||'')} ${(t.vehicleModel||'')} ${(t.vehicleColor||'')} • ${(t.vehiclePlate||'')}">🚗 רכב צבאי</span>` : ''}
         ${t.role === 'admin' ? '<span style="background:rgba(56,139,253,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600">מנהל</span>' : ''}
         ${t.phone ? `<span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">📱 ${formatPhoneDisplay(t.phone)}</span>` : ''}
         ${t.endDate ? `<span
@@ -3301,6 +3361,7 @@ function filterTornimEndingSoon() {
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:${catColor(cat)};font-weight:600">${cat}</span>
         <span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">${wkd}</span>
+        ${t.isMilitaryVehicle === 'כן' ? `<span style="background:rgba(46,160,67,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600" title="${(t.vehicleCompany||'')} ${(t.vehicleModel||'')} ${(t.vehicleColor||'')} • ${(t.vehiclePlate||'')}">🚗 רכב צבאי</span>` : ''}
         ${t.role === 'admin' ? '<span style="background:rgba(56,139,253,0.15);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--accent);font-weight:600">מנהל</span>' : ''}
         ${t.phone ? `<span style="background:var(--surface2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--text2)">📱 ${formatPhoneDisplay(t.phone)}</span>` : ''}
         ${t.endDate ? `<span
@@ -3321,16 +3382,34 @@ function filterTornimEndingSoon() {
   container.innerHTML = banner + `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">${cards}</div>`;
 }
 
+// Shows/hides the vehicle-detail sub-fields based on the "military vehicle?"
+// select. When switched to "לא" the sub-fields are also cleared, since a "no"
+// answer means the data is not relevant and shouldn't be left sitting stale
+// in the form ready to be silently resubmitted.
+function toggleVehicleFields(prefix) {
+  const isMilitary = document.getElementById(prefix + 'vehicle-military').value === 'כן';
+  const fieldsEl = document.getElementById(prefix + 'vehicle-fields');
+  if (fieldsEl) fieldsEl.style.display = isMilitary ? (fieldsEl.dataset.shownDisplay || 'block') : 'none';
+  if (!isMilitary) {
+    ['vehicle-company','vehicle-model','vehicle-color','vehicle-plate'].forEach(id => {
+      const el = document.getElementById(prefix + id);
+      if (el) el.value = '';
+    });
+  }
+}
+
 function openAddTorani() {
   editingTorani = null;
   document.getElementById('torani-modal-title').textContent = 'הוסף תורן';
-  ['t-name','t-username','t-password','t-phone'].forEach(id => document.getElementById(id).value='');
+  ['t-name','t-username','t-password','t-phone','t-vehicle-company','t-vehicle-model','t-vehicle-color','t-vehicle-plate'].forEach(id => document.getElementById(id).value='');
   document.getElementById('t-username').disabled = false;
   document.getElementById('t-role').value = 'user';
   // activity not shown in UI
   document.getElementById('t-category').value = '';
   document.getElementById('t-weekend').value = 'מלא';
   document.getElementById('t-enddate').value = '';
+  document.getElementById('t-vehicle-military').value = 'לא';
+  toggleVehicleFields('t-');
   document.getElementById('torani-alert').innerHTML = '';
   openModal('modal-add-torani');
 }
@@ -3349,6 +3428,12 @@ function openEditTorani(t) {
   document.getElementById('t-category').value = t.dutyCategory||'';
   document.getElementById('t-weekend').value = t.weekendType||'מלא';
   document.getElementById('t-enddate').value = isoToDdmm(t.endDate||'');
+  document.getElementById('t-vehicle-military').value = t.isMilitaryVehicle === 'כן' ? 'כן' : 'לא';
+  document.getElementById('t-vehicle-company').value = t.vehicleCompany||'';
+  document.getElementById('t-vehicle-model').value = t.vehicleModel||'';
+  document.getElementById('t-vehicle-color').value = t.vehicleColor||'';
+  document.getElementById('t-vehicle-plate').value = t.vehiclePlate||'';
+  toggleVehicleFields('t-');
   document.getElementById('torani-alert').innerHTML = '';
   openModal('modal-add-torani');
 }
@@ -3391,6 +3476,11 @@ async function saveTorani() {
   const dutyCategory = document.getElementById('t-category').value;
   const weekendType = document.getElementById('t-weekend').value;
   const endDate = ddmmToISO(document.getElementById('t-enddate').value || '');
+  const isMilitaryVehicle = document.getElementById('t-vehicle-military').value;
+  const vehicleCompany = document.getElementById('t-vehicle-company').value.trim();
+  const vehicleModel = document.getElementById('t-vehicle-model').value.trim();
+  const vehicleColor = document.getElementById('t-vehicle-color').value.trim();
+  const vehiclePlate = document.getElementById('t-vehicle-plate').value.trim();
 
   if (!name) return showAlert('torani-alert','חסר שם מלא','error');
 
@@ -3399,10 +3489,12 @@ async function saveTorani() {
   if (editingTorani) {
     res = await api({action:'updateTorani', username:editingTorani,
       name, role, phone, email, activity, dutyCategory, weekendType, endDate,
+      isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate,
       newPassword: password||undefined});
   } else {
     if (!username||!password) { showLoading(false); return showAlert('torani-alert','חסרים שם משתמש וסיסמה','error'); }
-    res = await api({action:'addTorani', name, username, password, role, phone, activity, dutyCategory, weekendType, endDate});
+    res = await api({action:'addTorani', name, username, password, role, phone, activity, dutyCategory, weekendType, endDate,
+      isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate});
   }
   showLoading(false);
   if (res.success) { closeModal('modal-add-torani'); loadUsers(); }
@@ -6633,9 +6725,11 @@ async function loadProfile() {
   if (currentUser && currentUser.role === 'viewer') {
     const nameCard = document.getElementById('profile-name')?.closest('.card');
     const dutyCard = document.getElementById('profile-weekend')?.closest('.card');
+    const vehicleCard = document.getElementById('profile-vehicle-military')?.closest('.card');
     const histCard = document.getElementById('profile-history-card');
     if (nameCard) nameCard.style.display = 'none';
     if (dutyCard) dutyCard.style.display = 'none';
+    if (vehicleCard) vehicleCard.style.display = 'none';
     if (histCard) histCard.style.display = 'none';
     return;
   }
@@ -6704,6 +6798,17 @@ async function loadProfile() {
   // category not shown in user profile
   const wkEl = document.getElementById('profile-weekend');
   if (wkEl) wkEl.value = p.weekendType || 'מלא';
+
+  // Fill vehicle details
+  const vmEl = document.getElementById('profile-vehicle-military');
+  if (vmEl) {
+    vmEl.value = p.isMilitaryVehicle === 'כן' ? 'כן' : 'לא';
+    document.getElementById('profile-vehicle-company').value = p.vehicleCompany || '';
+    document.getElementById('profile-vehicle-model').value = p.vehicleModel || '';
+    document.getElementById('profile-vehicle-color').value = p.vehicleColor || '';
+    document.getElementById('profile-vehicle-plate').value = p.vehiclePlate || '';
+    toggleVehicleFields('profile-');
+  }
 
   // Duty type banner — inline chip in hero
   const dutyInfo = getDutyTypeInfo(p);
@@ -6783,6 +6888,29 @@ async function saveDutySettings() {
     loadProfile(); // refresh banner
   } else {
     showAlert('duty-settings-alert', res.error||'שגיאה','error');
+  }
+}
+
+async function saveVehicleDetails() {
+  const isMilitaryVehicle = document.getElementById('profile-vehicle-military').value;
+  const vehicleCompany = document.getElementById('profile-vehicle-company').value.trim();
+  const vehicleModel = document.getElementById('profile-vehicle-model').value.trim();
+  const vehicleColor = document.getElementById('profile-vehicle-color').value.trim();
+  const vehiclePlate = document.getElementById('profile-vehicle-plate').value.trim();
+  showLoading(true);
+  const res = await api({action:'updateTorani', username: currentUser.username,
+    isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate});
+  showLoading(false);
+  if (res.success) {
+    showAlert('vehicle-alert','✅ פרטי הרכב נשמרו','success');
+    if (_profilePerson) {
+      Object.assign(_profilePerson, isMilitaryVehicle === 'כן'
+        ? {isMilitaryVehicle, vehicleCompany, vehicleModel, vehicleColor, vehiclePlate}
+        : {isMilitaryVehicle: 'לא', vehicleCompany:'', vehicleModel:'', vehicleColor:'', vehiclePlate:''});
+    }
+    loadProfile(); // refresh fields with server-normalized values
+  } else {
+    showAlert('vehicle-alert', res.error||'שגיאה','error');
   }
 }
 </script>
