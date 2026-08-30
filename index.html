@@ -1725,7 +1725,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">30/08/2026 17:05</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">30/08/2026 18:18</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1738,8 +1738,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '30/08/2026 17:05';
-const BUILD_EPOCH = 1788098759448; // ms — when this exact file was pushed
+const BUILD_STAMP = '30/08/2026 18:18';
+const BUILD_EPOCH = 1788103118236; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -3935,11 +3935,17 @@ function renderAdminAuditCard(res) {
   };
   const rows = entries.map(e => {
     const meta = auditActionMeta(e.action);
-    return `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px;background:rgba(128,128,128,.06);border-radius:8px;border-inline-start:3px solid ${meta.color};font-size:12.5px;flex-wrap:wrap">
-      <span style="font-size:14px">${meta.icon}</span>
-      <span style="font-weight:700">${escapeHtml(e.who)}</span>
-      <span style="color:${meta.color};font-weight:600">${escapeHtml(e.action)}</span>
-      <span style="margin-inline-start:auto;color:var(--text2);font-size:11px;white-space:nowrap;direction:ltr">${fmtTs(e.ts)}</span>
+    const hasDetails = !!(e.details && String(e.details).trim());
+    return `<div style="background:rgba(128,128,128,.06);border-radius:8px;border-inline-start:3px solid ${meta.color};overflow:hidden">
+      <div style="display:flex;gap:8px;align-items:center;padding:7px 10px;font-size:12.5px;flex-wrap:wrap${hasDetails ? ';cursor:pointer' : ''}"
+        ${hasDetails ? 'onclick="toggleAuditRowDetail(this)"' : ''}>
+        <span style="font-size:14px">${meta.icon}</span>
+        <span style="font-weight:700">${escapeHtml(e.who)}</span>
+        <span style="color:${meta.color};font-weight:600">${escapeHtml(e.action)}</span>
+        <span style="margin-inline-start:auto;color:var(--text2);font-size:11px;white-space:nowrap;direction:ltr">${fmtTs(e.ts)}</span>
+        ${hasDetails ? `<span class="audit-row-chevron" style="font-size:10px;color:var(--text3);transition:transform .15s;display:inline-block">▾</span>` : ''}
+      </div>
+      ${hasDetails ? `<div style="display:none;padding:0 10px 9px 34px;font-size:12.5px;color:var(--text2);line-height:1.5">${escapeHtml(e.details)}</div>` : ''}
     </div>`;
   }).join('');
   card.style.display = 'block';
@@ -3950,6 +3956,18 @@ function renderAdminAuditCard(res) {
       <a href="#" onclick="switchTab('admin-audit');return false" style="font-size:12px;color:var(--accent);text-decoration:none;font-weight:600">לצפייה ביומן המלא ←</a>
     </div>
   </div>`;
+}
+
+// Expands/collapses the detail line under a clicked row in the home-page audit
+// mini-card, in place — no modal. headerEl is the clicked row; the details div
+// is always its very next sibling in the markup built above.
+function toggleAuditRowDetail(headerEl) {
+  const detailsEl = headerEl.nextElementSibling;
+  if (!detailsEl) return;
+  const isOpen = detailsEl.style.display === 'block';
+  detailsEl.style.display = isOpen ? 'none' : 'block';
+  const chevron = headerEl.querySelector('.audit-row-chevron');
+  if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
 }
 
 function renderAdminSwapsCard(res) {
