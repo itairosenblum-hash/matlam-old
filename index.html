@@ -1174,6 +1174,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
             <button id="lock-toggle-btn" class="btn btn-secondary" onclick="toggleConstraintLock()" style="min-width:130px;border-color:var(--danger);color:var(--danger)">
               🔒 נעול
             </button>
+            <button class="btn btn-secondary btn-sm" onclick="openForceSkipModal()" title="סימון חודש מלא באילוצים לתורן — לא ישובץ כלל" style="border-color:rgba(218,54,51,.4);color:var(--danger)">🚫 אילוץ דילוג</button>
             <button class="btn btn-secondary btn-sm" onclick="sendConstraintReminder()" title="שלח תזכורת למי שלא הגיש אילוצים">📧 תזכורת</button>
             <button class="btn btn-secondary btn-sm" onclick="sendMonthlySchedule()" title="שלח לוח חודשי לכל התורנים">📬 שלח לוח</button>
           </div>
@@ -1724,7 +1725,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">30/08/2026 18:24</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">08/09/2026 17:43</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1737,8 +1738,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '30/08/2026 18:24';
-const BUILD_EPOCH = 1788103489412; // ms — when this exact file was pushed
+const BUILD_STAMP = '08/09/2026 17:43';
+const BUILD_EPOCH = 1788878596689; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -2576,6 +2577,10 @@ async function loadConstraints() {
     });
     while (constraintData.length < days) constraintData.push('');
     document.getElementById('constraint-notes').value = res.notes || '';
+    if (String(res.notes || '').includes('[דילוג מנהל')) {
+      const reason = (String(res.notes).match(/\[דילוג מנהל:?\s*([^\]]*)\]/) || [])[1] || '';
+      showAlert('constraint-alert', 'ℹ️ המנהל סימן עבורך דילוג מלא לחודש זה' + (reason ? ' (' + escapeHtml(reason) + ')' : '') + ' — לא תשובץ. ניתן לשנות במידת הצורך.', 'info');
+    }
   }
   renderConstraintGrid(year, mon, days);
   // "לא מבצע החודש" button — only for משרת אב (activity 0.5)
@@ -4880,6 +4885,83 @@ function waRemindConstraintsGroup() {
   window.open('https://wa.me/?text=' + msg, '_blank');
 }
 
+// Marker written into the notes column when an admin forces a full skip month.
+// Kept as a prefix — the reason text follows inside the same brackets.
+const ADMIN_SKIP_MARK = '[דילוג מנהל';
+
+function stripSkipMark(notes) {
+  return String(notes || '').replace(/\[דילוג מנהל[^\]]*\]/g, '').trim();
+}
+
+async function openForceSkipModal(preselectName) {
+  if (!window._allUsers || !window._allUsers.length) {
+    const uRes = await api({action:'getAllTornim'});
+    if (uRes.success) window._allUsers = uRes.tornim;
+  }
+  const sel = document.getElementById('force-skip-name');
+  sel.innerHTML = '<option value="">— בחר תורן —</option>';
+  const names = (window._allUsers || [])
+    .filter(t => t.role !== 'admin' && t.role !== 'viewer' && t.name)
+    .map(t => t.name)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => a.localeCompare(b, 'he'));
+  names.forEach(n => sel.add(new Option(n, n)));
+  if (preselectName) sel.value = preselectName;
+
+  const {year, mon} = parseMonth(document.getElementById('admin-constraint-month').value);
+  const lbl = document.getElementById('force-skip-month');
+  if (lbl) lbl.textContent = MONTHS[mon-1] + ' ' + year;
+  document.getElementById('force-skip-reason').value = '';
+  document.getElementById('force-skip-alert').innerHTML = '';
+  openModal('modal-force-skip');
+}
+
+async function submitForceSkip() {
+  const name = document.getElementById('force-skip-name').value;
+  const reason = document.getElementById('force-skip-reason').value.trim();
+  if (!name) return showAlert('force-skip-alert', 'בחר תורן', 'error');
+  if (!reason) return showAlert('force-skip-alert', 'חובה למלא סיבה', 'error');
+  const ok = await applyForceSkip(name, reason);
+  if (ok) closeModal('modal-force-skip');
+  else showAlert('force-skip-alert', 'השמירה נכשלה — נסה שוב', 'error');
+}
+
+// Fills every day of the selected month with 'X' for one person and stamps the
+// reason into the notes column. Existing notes are preserved (minus any older
+// skip marker) so an admin note the person wrote isn't silently discarded.
+async function applyForceSkip(name, reason) {
+  const {days, s: month} = parseMonth(document.getElementById('admin-constraint-month').value);
+  const prevNotes = (window._constraintEditState && window._constraintEditState[name])
+    ? window._constraintEditState[name].notes : '';
+  const rest = stripSkipMark(prevNotes).replace('[ללא אילוצים החודש]', '').trim();
+  const notes = ('[דילוג מנהל: ' + reason + ']' + (rest ? ' ' + rest : '')).trim();
+  showLoading(true);
+  const res = await api({action:'saveConstraints', month, constraints: new Array(days).fill('X'), notes, targetName: name});
+  showLoading(false);
+  if (!res.success) { alert('שגיאה: ' + (res.error || '')); return false; }
+  clearApiCache();
+  await loadAdminConstraints();
+  showAlert('admin-constraints-alert', '✓ נרשם דילוג מלא עבור ' + escapeHtml(name) + ' — לא ישובץ החודש.', 'success');
+  return true;
+}
+
+async function toggleRowForceSkip(name) {
+  const state = (window._constraintEditState || {})[name];
+  const isSkipped = state && String(state.notes || '').includes(ADMIN_SKIP_MARK);
+  if (!isSkipped) { openForceSkipModal(name); return; }
+
+  if (!confirm('לבטל את דילוג המנהל עבור ' + name + '?\n\nכל סימוני האילוץ לחודש זה יימחקו.')) return;
+  const {days, s: month} = parseMonth(document.getElementById('admin-constraint-month').value);
+  const notes = stripSkipMark(state.notes);
+  showLoading(true);
+  const res = await api({action:'saveConstraints', month, constraints: new Array(days).fill(''), notes, targetName: name});
+  showLoading(false);
+  if (!res.success) { alert('שגיאה: ' + (res.error || '')); return; }
+  clearApiCache();
+  await loadAdminConstraints();
+  showAlert('admin-constraints-alert', '✓ דילוג המנהל בוטל עבור ' + escapeHtml(name) + '.', 'success');
+}
+
 async function loadAdminConstraints() {
   const {year, mon, days, s: month} = parseMonth(document.getElementById('admin-constraint-month').value);
   showLoading(true);
@@ -5002,6 +5084,11 @@ async function loadAdminConstraints() {
         <span class="v-count-badge" style="color:var(--accent);font-size:11px"> ✓<span class="vc">${vCount}</span></span>
         ${(!vCount && !xCount && String(c.notes||'').includes('[ללא אילוצים החודש]')) ? '<span style="color:var(--accent);font-size:10px;background:rgba(46,160,67,0.12);border:1px solid rgba(46,160,67,0.3);border-radius:8px;padding:1px 6px">✋ ללא אילוצים</span>' : ''}
         ${String(c.notes||'').includes('[לא מבצע החודש]') ? '<span style="color:var(--danger);font-size:10px;background:rgba(218,54,51,0.12);border:1px solid rgba(218,54,51,0.3);border-radius:8px;padding:1px 6px">🚫 לא מבצע החודש</span>' : ''}
+        ${String(c.notes||'').includes(ADMIN_SKIP_MARK) ? '<span style="color:var(--danger);font-size:10px;background:rgba(218,54,51,0.16);border:1px solid rgba(218,54,51,0.45);border-radius:8px;padding:1px 6px">🚫 דילוג מנהל</span>' : ''}
+        <button onclick="toggleRowForceSkip('${safeName}')" title="${String(c.notes||'').includes(ADMIN_SKIP_MARK) ? 'ביטול דילוג המנהל' : 'אילוץ דילוג — חודש מלא'}"
+          style="margin-inline-start:4px;background:transparent;border:1px solid var(--border);border-radius:6px;padding:1px 5px;font-size:11px;cursor:pointer;opacity:.65;font-family:inherit">
+          ${String(c.notes||'').includes(ADMIN_SKIP_MARK) ? '↩️' : '🚫'}
+        </button>
       </td>`;
     for (let d = 0; d < days; d++) {
       const v = c.constraints[d];
@@ -7064,6 +7151,39 @@ async function saveVehicleDetails() {
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="sendAdminMessage()">📣 שלח</button>
       <button class="btn btn-secondary" onclick="closeModal('modal-admin-message')">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: אילוץ דילוג לתורן -->
+<div id="modal-force-skip" class="modal-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">🚫 אילוץ דילוג לתורן</div>
+      <button class="modal-close" onclick="closeModal('modal-force-skip')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="force-skip-alert"></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">חודש: <strong id="force-skip-month" style="color:var(--text)"></strong></div>
+      <div class="form-group">
+        <label>תורן</label>
+        <select id="force-skip-name" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;color:var(--text);font-family:inherit;outline:none">
+          <option value="">— בחר תורן —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>סיבה <span style="color:var(--danger)">*</span></label>
+        <input id="force-skip-reason" type="text" placeholder="לדוגמה: חופשה / קורס / מילואים">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">חובה למלא — תופיע בהערות ובביומן הפעולות</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;line-height:1.6">
+        כל ימי החודש יסומנו כאילוץ (✕) והתורן לא ישובץ לאף תורנות, כולל כוננות.<br>
+        התורן יראה זאת בעמוד האילוצים שלו ויוכל לשנות במידת הצורך.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="submitForceSkip()">✔ החל דילוג</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-force-skip')">ביטול</button>
     </div>
   </div>
 </div>
