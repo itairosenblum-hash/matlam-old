@@ -99,7 +99,7 @@ function route(req) {
   // User actions
   if (action === 'getProfile') return {success: true, user};
   if (action === 'getConstraints') return actionGetConstraints(req, user);
-  if (action === 'saveConstraints') return withAudit(user, 'הגשת אילוצים', String(req.month||'') + (req.viewAs ? ' עבור ' + req.viewAs : '') + (Array.isArray(req.constraints) ? ' | X: ' + req.constraints.filter(function(c){return c==='X';}).length + ' | V: ' + req.constraints.filter(function(c){return c==='V';}).length : ''), actionSaveConstraints(req, user));
+  if (action === 'saveConstraints') return withAudit(user, 'הגשת אילוצים', String(req.month||'') + (req.targetName ? ' עבור ' + req.targetName : (req.viewAs ? ' עבור ' + req.viewAs : '')) + (Array.isArray(req.constraints) ? ' | X: ' + req.constraints.filter(function(c){return c==='X';}).length + ' | V: ' + req.constraints.filter(function(c){return c==='V';}).length : ''), actionSaveConstraints(req, user));
   if (action === 'getSchedule') return actionGetSchedule(req, user);
   if (action === 'changePassword') return withAudit(user, 'שינוי סיסמה', String(user.username||''), actionChangePassword(req, user));
 
@@ -843,8 +843,18 @@ function getNameByUsername(username) {
 function actionSaveConstraints(req, user) {
   const month = String(req.month || '');
   const {constraints, notes} = req;
+  // targetName: admin-only — write the row by display name directly, with no
+  // dependency on the person having a Users account (viewAs resolves through
+  // getNameByUsername and silently falls back to the admin's own name when the
+  // person has no username). Used by the "אילוץ דילוג" admin flow.
   // viewAs: save for the target user, not the logged-in admin
-  const saveName = req.viewAs ? getNameByUsername(req.viewAs) : user.name;
+  var saveName;
+  if (req.targetName && user.role === 'admin') {
+    saveName = String(req.targetName).trim();
+  } else {
+    saveName = req.viewAs ? getNameByUsername(req.viewAs) : user.name;
+  }
+  if (!saveName) return {success: false, error: 'לא נמצא שם לשמירת האילוצים'};
   
   // Check lock status (admin can always save)
   if (user.role !== 'admin') {
@@ -944,6 +954,11 @@ function actionGetSchedule(req, user) {
 // plus anyone with a verified full-month "X" constraint regardless of
 // category. This is the persistent "🚫 מדולגים החודש" banner.
 // Admin's own name is always excluded, independent of the People dutyCategory value.
+// Marker written into the Constraints notes column when an admin forces a full
+// skip month for someone from the "אילוצים מוגשים" page. Kept as a prefix
+// (the reason text follows) so the presence check is a simple indexOf.
+var ADMIN_SKIP_MARK = '[דילוג מנהל';
+
 function computeSkippedTornim(month) {
   try {
     var mon = parseInt(String(month).substring(4,6), 10);
@@ -967,7 +982,7 @@ function computeSkippedTornim(month) {
     // Full-month "X" constraints (e.g. via the "🚫 לא מבצע החודש" button, or
     // manually marking every day) are a skip for a known, explicit reason —
     // flag them regardless of where their score sits vs. the group average.
-    var fullConstraint = {};
+    var fullConstraint = {}, adminSkip = {};
     var consSheet = ss.getSheetByName('Constraints_' + month);
     if (consSheet) {
       var consRows = consSheet.getDataRange().getValues();
@@ -980,6 +995,7 @@ function computeSkippedTornim(month) {
           return cv === 'X' || c === true;
         });
         if (allX) fullConstraint[cName] = true;
+        if (String(consRows[ci][32]||'').indexOf(ADMIN_SKIP_MARK) !== -1) adminSkip[cName] = true;
       }
     }
 
@@ -1014,7 +1030,7 @@ function computeSkippedTornim(month) {
       // those categories affect the eligibility check below, not
       // whether an explicit "I'm not available at all" constraint counts.
       if (fullConstraint[name]) {
-        skipped.push(name + ' (אילוץ מלא החודש)');
+        skipped.push(name + (adminSkip[name] ? ' (דילוג מנהל)' : ' (אילוץ מלא החודש)'));
         continue;
       }
 
