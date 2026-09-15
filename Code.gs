@@ -77,7 +77,7 @@ function logSlowRequest(action, ms) {
     const last = sh.getLastRow();
     if (last === 0) sh.appendRow(['זמן', 'פעולה', 'משך (ms)']);
     else if (last > 500) return;
-    sh.appendRow([Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss'), String(action || ''), ms]);
+    sh.appendRow([Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss'), String(action || '(ללא action)'), ms]);
   } catch (_) {}
 }
 
@@ -403,7 +403,7 @@ function actionToggleUser(req) {
 
 // ===== PEOPLE =====
 function actionGetPeople() {
-  const rows = getSheet(SH.PEOPLE).getDataRange().getValues();
+  const rows = sheetValues(getSheet(SH.PEOPLE));
   const people = [];
   for (let i = 1; i < rows.length; i++) {
     const [name, activity, dutyCategory, phone, weekendType, email, endDate,
@@ -926,7 +926,7 @@ function actionGetAllConstraints(req) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Constraints_' + month);
   if (!sheet) return {success: true, constraints: {}, month};
-  const rows = sheet.getDataRange().getValues();
+  const rows = sheetValues(sheet);
   const result = {};
   for (let i = 1; i < rows.length; i++) {
     if (!rows[i][0]) continue;
@@ -961,7 +961,7 @@ function actionGetSchedule(req, user) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Schedule_' + month);
   if (!sheet) return {success: true, schedule: [], month};
-  const rows = sheet.getDataRange().getValues();
+  const rows = sheetValues(sheet);
   const schedule = [];
   for (let i = 1; i < rows.length; i++) {
     if (!rows[i][0]) continue;
@@ -1007,7 +1007,7 @@ function computeSkippedTornim(month) {
     var assigned = {};
     var schedSheet = ss.getSheetByName('Schedule_' + month);
     if (schedSheet) {
-      var schedRows = schedSheet.getDataRange().getValues();
+      var schedRows = sheetValues(schedSheet);
       for (var i = 1; i < schedRows.length; i++) {
         var v1 = String(schedRows[i][3]||'').trim();
         var v2 = String(schedRows[i][9]||'').trim();
@@ -1022,7 +1022,7 @@ function computeSkippedTornim(month) {
     var fullConstraint = {}, adminSkip = {};
     var consSheet = ss.getSheetByName('Constraints_' + month);
     if (consSheet) {
-      var consRows = consSheet.getDataRange().getValues();
+      var consRows = sheetValues(consSheet);
       for (var ci = 1; ci < consRows.length; ci++) {
         var cName = String(consRows[ci][0]||'').trim();
         if (!cName) continue;
@@ -1040,7 +1040,7 @@ function computeSkippedTornim(month) {
     (actionGetPeople().people||[]).forEach(function(p){ peopleMap[String(p.name||'').trim()] = p; });
 
     var usersActive = {}, usersRole = {}, adminName = '';
-    var uRows = getSheet(SH.USERS).getDataRange().getValues();
+    var uRows = sheetValues(getSheet(SH.USERS));
     for (var ua = 1; ua < uRows.length; ua++) {
       var uan = String(uRows[ua][1]||'').trim();
       if (!uan) continue;
@@ -1049,7 +1049,7 @@ function computeSkippedTornim(month) {
       if (usersRole[uan] === 'admin') adminName = uan;
     }
 
-    var scoreRows = getScoresSheet(year).getDataRange().getValues();
+    var scoreRows = sheetValues(getScoresSheet(year));
     var skipped = [];
 
     for (var j = 1; j < scoreRows.length; j++) {
@@ -1640,8 +1640,8 @@ function manualInit() {
 // ===== UNIFIED TORANI MANAGEMENT =====
 // Returns merged data from Users + People sheets
 function actionGetAllTornim() {
-  const usersRows = getSheet(SH.USERS).getDataRange().getValues();
-  const peopleRows = getSheet(SH.PEOPLE).getDataRange().getValues();
+  const usersRows = sheetValues(getSheet(SH.USERS));
+  const peopleRows = sheetValues(getSheet(SH.PEOPLE));
 
   // Build people map by name
   const peopleMap = {};
@@ -1696,7 +1696,29 @@ function actionGetAllTornim() {
 // times, and the fixed network/Apps-Script overhead is paid once, not per call.
 // Internally it just orchestrates the existing action functions, so their
 // return shapes are preserved exactly (the frontend render fns expect them).
+// ── Request-scoped read memo ──
+// Composite reads (getAdminDashboard) call many read helpers that each re-read the
+// same sheets (People x4, Settings x5, Users x3 ...). While _valMemo is on, each
+// sheet is read once per request. Only enabled inside read-only composites, so
+// writes never see stale data. Callers must not mutate the returned rows.
+var _valMemo = null;
+function sheetValues(sh) {
+  if (!_valMemo) return sh.getDataRange().getValues();
+  var k = sh.getSheetId();
+  if (!_valMemo.hasOwnProperty(k)) _valMemo[k] = sh.getDataRange().getValues();
+  return _valMemo[k];
+}
+
 function actionGetAdminDashboard(req, user) {
+  _valMemo = {};
+  try {
+    return _adminDashboardImpl(req, user);
+  } finally {
+    _valMemo = null;
+  }
+}
+
+function _adminDashboardImpl(req, user) {
   function nextM(m, add) {
     var y  = parseInt(m.substring(0, 4), 10);
     var mo = parseInt(m.substring(4, 6), 10) + add;
@@ -2480,7 +2502,7 @@ function actionGetLockStatus(req) {
   if (!req) return {success: false, error: 'חסר req'};
   const month = String(req.month || '');
   const sh = getSettingsSheet();
-  const rows = sh.getDataRange().getValues();
+  const rows = sheetValues(sh);
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === month) {
       return {success: true, locked: rows[i][1] !== 'open', month};
@@ -2571,7 +2593,7 @@ function actionGetAuditLog(req) {
 // ===== SCHEDULE DRAFT/PUBLISHED STATUS =====
 function getScheduleStatus(month) {
   const sh = getSettingsSheet();
-  const rows = sh.getDataRange().getValues();
+  const rows = sheetValues(sh);
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === 'sched_' + month) return String(rows[i][1]) === 'draft' ? 'draft' : 'published';
   }
@@ -2758,7 +2780,7 @@ function actionSubmitSwap(req, user) {
 }
 
 function actionGetSwaps(req, user) {
-  const rows = getSwapsSheet().getDataRange().getValues();
+  const rows = sheetValues(getSwapsSheet());
   const swaps = [];
   for (let i = 1; i < rows.length; i++) {
     if (!rows[i][0] || !String(rows[i][0]).trim()) continue;
