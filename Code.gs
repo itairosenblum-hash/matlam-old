@@ -49,6 +49,7 @@ function doGet(e) {
     const _ms = Date.now() - _t0;
     console.log('action=' + params.action + ' ms=' + _ms);
     if (_ms > 4000) logSlowRequest(params.action, _ms);
+    if (result && typeof result === 'object' && !Array.isArray(result)) result._srv = _ms;  // lets the browser split wait vs run time
     const json = JSON.stringify(result);
     if (callback) {
       // JSONP response - bypasses CORS completely
@@ -73,12 +74,45 @@ function doGet(e) {
 // kept for anonymous web-app calls). Capped at 500 rows; never breaks a request.
 function logSlowRequest(action, ms) {
   try {
-    const sh = getSheet('SlowLog');
-    const last = sh.getLastRow();
-    if (last === 0) sh.appendRow(['זמן', 'פעולה', 'משך (ms)']);
-    else if (last > 500) return;
-    sh.appendRow([Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss'), String(action || '(ללא action)'), ms]);
+    const sh = slowLogSheet_();
+    if (!sh) return;
+    sh.appendRow([Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss'), String(action || '(ללא action)'), ms, 'שרת']);
   } catch (_) {}
+}
+
+var SLOWLOG_HEADERS = ['זמן', 'פעולה', 'משך (ms)', 'מקור', 'זמן בשרת (ms)', 'המתנה+רשת (ms)', 'מכשיר', 'משתמש'];
+
+// Returns the SlowLog sheet with an up-to-date header, or null once it is full.
+function slowLogSheet_() {
+  const sh = getSheet('SlowLog');
+  const last = sh.getLastRow();
+  if (last > 500) return null;
+  if (last === 0 || String(sh.getRange(1, 8).getValue()) !== SLOWLOG_HEADERS[7]) {
+    sh.getRange(1, 1, 1, SLOWLOG_HEADERS.length).setValues([SLOWLOG_HEADERS]);
+  }
+  return sh;
+}
+
+// Browser-side timings: how long the USER actually waited (queue + network + run),
+// batched by the page and sent only for requests that took over 4s.
+function actionLogClientTiming(req, user) {
+  try {
+    var list = req.entries;
+    if (typeof list === 'string') list = JSON.parse(list);
+    if (!Array.isArray(list) || !list.length) return {success: true};
+    var sh = slowLogSheet_();
+    if (!sh) return {success: true};
+    var ts = Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss');
+    var rows = list.slice(0, 20).map(function(e) {
+      var total = Math.max(0, Math.round(Number(e.ms) || 0));
+      var srv = (e.srv === '' || e.srv == null || isNaN(Number(e.srv))) ? '' : Math.round(Number(e.srv));
+      return [String(e.at || ts).substring(0, 19), String(e.a || '').substring(0, 40) + (e.err ? ' (' + String(e.err).substring(0, 20) + ')' : ''),
+              total, 'דפדפן', srv, srv === '' ? '' : Math.max(0, total - srv),
+              String(e.dev || '').substring(0, 20), String((user && user.name) || '').substring(0, 40)];
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, SLOWLOG_HEADERS.length).setValues(rows);
+  } catch (e) { Logger.log('logClientTiming: ' + e); }
+  return {success: true};
 }
 
 function makeResp(data) {
@@ -116,7 +150,7 @@ function routeInner(req) {
   // notifications + changing their own password. Everything else is blocked.
   if (user.role === 'viewer') {
     var viewerAllowed = ['getSchedule','getScores','getAllTornim','getPeople','getProfile',
-                         'getDutyTypes','getNotifications','clearNotification','clearAllNotifications','changePassword'];
+                         'getDutyTypes','getNotifications','clearNotification','clearAllNotifications','changePassword','logClientTiming'];
     if (viewerAllowed.indexOf(action) === -1) {
       return {success:false, error:'לחשבון צפייה אין הרשאה לפעולה זו'};
     }
@@ -124,6 +158,7 @@ function routeInner(req) {
 
   // User actions
   if (action === 'getProfile') return {success: true, user};
+  if (action === 'logClientTiming') return actionLogClientTiming(req, user);
   if (action === 'getConstraints') return actionGetConstraints(req, user);
   if (action === 'saveConstraints') return withAudit(user, 'הגשת אילוצים', String(req.month||'') + (req.targetName ? ' עבור ' + req.targetName : (req.viewAs ? ' עבור ' + req.viewAs : '')) + (Array.isArray(req.constraints) ? ' | X: ' + req.constraints.filter(function(c){return c==='X';}).length + ' | V: ' + req.constraints.filter(function(c){return c==='V';}).length : ''), actionSaveConstraints(req, user));
   if (action === 'getSchedule') return cachedRead(req, ['sched', req.month, roleClass(user)], function(){ return withReadMemo(function(){ return actionGetSchedule(req, user); }); });
@@ -218,7 +253,7 @@ var READ_CACHE_TTL = 300;
 var READ_CACHE_CHUNK = 40000;   // chars; Hebrew is 2 bytes each in UTF-8
 var SERVER_READ_ACTIONS = ['ping','login','bootstrap','getLockStatus','getProfile','getConstraints',
   'getSchedule','getPeople','getSwaps','getScores','getToraniHistory','getNotifications',
-  'getUsers','getAuditLog','getAdminDashboard','getAllConstraints','debugSwap','getAllTornim','getDutyTypes'];
+  'getUsers','getAuditLog','getAdminDashboard','getAllConstraints','debugSwap','getAllTornim','getDutyTypes','logClientTiming'];
 
 function roleClass(user) { return (user && user.role === 'admin') ? 'a' : 'u'; }
 
