@@ -44,7 +44,11 @@ function doGet(e) {
         catch(_) { params[k] = v; }
       });
     }
+    const _t0 = Date.now();
     const result = route(params);
+    const _ms = Date.now() - _t0;
+    console.log('action=' + params.action + ' ms=' + _ms);
+    if (_ms > 4000) logSlowRequest(params.action, _ms);
     const json = JSON.stringify(result);
     if (callback) {
       // JSONP response - bypasses CORS completely
@@ -63,6 +67,18 @@ function doGet(e) {
     }
     return makeResp({success: false, error: err.toString()});
   }
+}
+
+// Records requests slower than 4s to a 'SlowLog' sheet (execution logs are not
+// kept for anonymous web-app calls). Capped at 500 rows; never breaks a request.
+function logSlowRequest(action, ms) {
+  try {
+    const sh = getSheet('SlowLog');
+    const last = sh.getLastRow();
+    if (last === 0) sh.appendRow(['זמן', 'פעולה', 'משך (ms)']);
+    else if (last > 500) return;
+    sh.appendRow([Utilities.formatDate(new Date(), 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss'), String(action || ''), ms]);
+  } catch (_) {}
 }
 
 function makeResp(data) {
@@ -222,11 +238,32 @@ function actionLogin(req) {
 
 function validateToken(token) {
   if (!token) return null;
+  token = String(token);
+  // Fast path: a token validated in the last 10 minutes skips the Sessions sheet read.
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'tok_' + token;
+  try {
+    const hit = cache.get(cacheKey);
+    if (hit) {
+      const c = JSON.parse(hit);
+      if (c.exp > Date.now()) return {username: c.username, name: c.name, role: c.role};
+      cache.remove(cacheKey);
+    }
+  } catch (_) {}
+
   const rows = getSheet(SH.SESSIONS).getDataRange().getValues();
   const now = new Date();
   for (let i = 1; i < rows.length; i++) {
     const [tok, username, name, role, , expiry] = rows[i];
-    if (tok === token && new Date(expiry) > now) return {username, name, role};
+    const expMs = new Date(expiry).getTime();
+    if (tok === token && expMs > now.getTime()) {
+      try {
+        // Never cache past the session's own expiry
+        const ttl = Math.min(600, Math.floor((expMs - now.getTime()) / 1000));
+        if (ttl > 5) cache.put(cacheKey, JSON.stringify({username, name, role, exp: expMs}), ttl);
+      } catch (_) {}
+      return {username, name, role};
+    }
   }
   return null;
 }
