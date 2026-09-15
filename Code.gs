@@ -92,7 +92,17 @@ function doOptions(e) {
 }
 
 // ===== ROUTER =====
+// Wrapper: any successful action that is not a pure read bumps the server-side
+// read-cache generation, so the next read goes back to the sheet.
 function route(req) {
+  const result = routeInner(req);
+  try {
+    if (result && result.success && SERVER_READ_ACTIONS.indexOf(req.action) === -1) bumpReadCache();
+  } catch (e) { Logger.log('bumpReadCache: ' + e); }
+  return result;
+}
+
+function routeInner(req) {
   const action = req.action;
   if (action === 'ping') return {success: true, message: 'מערכת תורנויות v1.0'};
   if (action === 'login') return actionLogin(req);
@@ -116,14 +126,14 @@ function route(req) {
   if (action === 'getProfile') return {success: true, user};
   if (action === 'getConstraints') return actionGetConstraints(req, user);
   if (action === 'saveConstraints') return withAudit(user, 'הגשת אילוצים', String(req.month||'') + (req.targetName ? ' עבור ' + req.targetName : (req.viewAs ? ' עבור ' + req.viewAs : '')) + (Array.isArray(req.constraints) ? ' | X: ' + req.constraints.filter(function(c){return c==='X';}).length + ' | V: ' + req.constraints.filter(function(c){return c==='V';}).length : ''), actionSaveConstraints(req, user));
-  if (action === 'getSchedule') return withReadMemo(function(){ return actionGetSchedule(req, user); });
+  if (action === 'getSchedule') return cachedRead(req, ['sched', req.month, roleClass(user)], function(){ return withReadMemo(function(){ return actionGetSchedule(req, user); }); });
   if (action === 'changePassword') return withAudit(user, 'שינוי סיסמה', String(user.username||''), actionChangePassword(req, user));
 
   // Available to all authenticated users
   if (action === 'getPeople') return actionGetPeople();
   if (action === 'submitSwap') return withAudit(user, 'בקשת החלפה', String(req.date||'') + ' ⇄ ' + String(req.withWho||'') + (req.note ? ' | הערה: ' + req.note : ''), actionSubmitSwap(req, user));
   if (action === 'getSwaps') return actionGetSwaps(req, user);
-  if (action === 'getScores') return withReadMemo(function(){ return actionGetScores(req); }); // all users can see scores
+  if (action === 'getScores') return cachedRead(req, ['scores', req.year], function(){ return withReadMemo(function(){ return actionGetScores(req); }); }); // all users can see scores
   if (action === 'getToraniHistory') return actionGetToraniHistory(req, user);
   if (action === 'getNotifications') return actionGetNotificationsPersonal(req, user);
   if (action === 'clearNotification') return actionClearNotification(req, user);
@@ -161,7 +171,7 @@ function route(req) {
   if (user.role !== 'admin') return {success: false, error: 'אין הרשאת מנהל', code: 403};
   if (action === 'getUsers') return actionGetUsers();
   if (action === 'getAuditLog') return actionGetAuditLog(req);
-  if (action === 'getAdminDashboard') return actionGetAdminDashboard(req, user);
+  if (action === 'getAdminDashboard') return cachedRead(req, ['dash', req.month], function(){ return actionGetAdminDashboard(req, user); });
   if (action === 'addUser') return withAudit(user, 'הוספת משתמש', String(req.username||'') + ' | ' + auditFields({'שם':req.name, 'תפקיד':req.role||'user'}), actionAddUser(req));
   if (action === 'updateUser') return withAudit(user, 'עדכון משתמש', String(req.username||'') + (auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'סיסמה':req.newPassword?'שונתה':''}) ? ' | ' + auditFields({'שם חדש':req.name, 'תפקיד':req.role, 'סיסמה':req.newPassword?'שונתה':''}) : ''), actionUpdateUser(req));
   if (action === 'toggleUser') return withAudit(user, 'הפעלה/השבתה של משתמש', String(req.username||''), actionToggleUser(req));
@@ -192,6 +202,68 @@ function route(req) {
   if (action === 'publishSchedule') return withAudit(user, 'סטטוס לוח: ' + (req.status === 'draft' ? 'טיוטה' : 'פורסם'), String(req.month||''), actionPublishSchedule(req, user));
 
   return {success: false, error: 'פעולה לא מוכרת: ' + action};
+}
+
+
+// ===== SERVER READ CACHE =====
+// Every Sheets call costs a few hundred ms regardless of sheet size, so the heavy
+// composite reads (dashboard / scores / schedule) are cached in CacheService.
+//  - Keys carry a "generation" token; any successful write through the site
+//    replaces it (bumpReadCache), which orphans every cached entry at once.
+//  - Entries also expire after READ_CACHE_TTL seconds, so edits made directly in
+//    the spreadsheet show up on their own within that window.
+//  - req.nocache (sent by the 🔄 button) skips the lookup and re-reads the sheet.
+// Values are chunked because CacheService caps a single value at 100KB.
+var READ_CACHE_TTL = 300;
+var READ_CACHE_CHUNK = 40000;   // chars; Hebrew is 2 bytes each in UTF-8
+var SERVER_READ_ACTIONS = ['ping','login','bootstrap','getLockStatus','getProfile','getConstraints',
+  'getSchedule','getPeople','getSwaps','getScores','getToraniHistory','getNotifications',
+  'getUsers','getAuditLog','getAdminDashboard','getAllConstraints','debugSwap','getAllTornim','getDutyTypes'];
+
+function roleClass(user) { return (user && user.role === 'admin') ? 'a' : 'u'; }
+
+function readCacheGen_(cache) {
+  var g = cache.get('rc_gen');
+  if (!g) { g = Utilities.getUuid().substring(0, 8); cache.put('rc_gen', g, 21600); }
+  return g;
+}
+
+function bumpReadCache() {
+  CacheService.getScriptCache().put('rc_gen', Utilities.getUuid().substring(0, 8), 21600);
+}
+
+function cachedRead(req, keyParts, fn) {
+  var cache, key;
+  try {
+    cache = CacheService.getScriptCache();
+    key = 'rc_' + readCacheGen_(cache) + '_' + keyParts.map(function(p){ return String(p == null ? '' : p); }).join('_');
+    if (!req.nocache) {
+      var head = cache.get(key);
+      if (head) {
+        var n = parseInt(head, 10), keys = [];
+        for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+        var parts = cache.getAll(keys), s = '';
+        for (var j = 0; j < n; j++) {
+          if (parts[keys[j]] == null) { s = null; break; }
+          s += parts[keys[j]];
+        }
+        if (s !== null) return JSON.parse(s);
+      }
+    }
+  } catch (e) { Logger.log('cachedRead get: ' + e); cache = null; }
+
+  var result = fn();
+  if (cache && result && result.success) {
+    try {
+      var json = JSON.stringify(result), map = {}, count = 0;
+      for (var k = 0; k < json.length; k += READ_CACHE_CHUNK) map[key + '_' + (count++)] = json.substring(k, k + READ_CACHE_CHUNK);
+      if (count <= 20) {
+        cache.putAll(map, READ_CACHE_TTL);
+        cache.put(key, String(count), READ_CACHE_TTL);
+      }
+    } catch (e) { Logger.log('cachedRead put: ' + e); }
+  }
+  return result;
 }
 
 // ===== UTILS =====
