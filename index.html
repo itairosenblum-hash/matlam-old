@@ -1724,7 +1724,7 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 </div>
 
 <div id="version-footer" style="text-align:center;padding:14px 10px 18px;font-size:11px;color:var(--text3,#8b949e);direction:ltr">
-  מטל"מ · גרסה <span id="version-stamp">15/09/2026 17:58</span><span id="version-update-hint"></span>
+  מטל"מ · גרסה <span id="version-stamp">15/09/2026 21:06</span><span id="version-update-hint"></span>
 </div>
 
 <div class="loading-overlay" id="loading">
@@ -1737,8 +1737,8 @@ thead tr th.c-hl-col { background-color: rgba(56,139,253,0.22) !important; }
 // VERSION CHECK — אוטומטי לפי SHA של GitHub
 // =====================================================
 // Build stamp — updated automatically on every push
-const BUILD_STAMP = '15/09/2026 17:58';
-const BUILD_EPOCH = 1789484321285; // ms — when this exact file was pushed
+const BUILD_STAMP = '15/09/2026 21:06';
+const BUILD_EPOCH = 1789495590380; // ms — when this exact file was pushed
 
 (function() {
   // בדוק גרסה ברקע מול GitHub
@@ -1854,8 +1854,17 @@ function _cacheKey(params) {
          '_' + (params.viewAs||'') + '_' + (params.year||'');
 }
 
+// Actions the server caches (see cachedRead in Code.gs). While the 🔄 button's
+// window is open, these are sent with nocache=1 so the server re-reads the sheet —
+// this is how edits made directly in the spreadsheet show up immediately.
+const _SERVER_CACHED = ['getAdminDashboard','getScores','getSchedule'];
+let _serverBypassUntil = 0;
+
 async function api(params) {
   if (!API_URL) { showSetupNeeded(); throw new Error('API URL לא הוגדר'); }
+  if (_SERVER_CACHED.includes(params.action) && Date.now() < _serverBypassUntil) {
+    params = Object.assign({}, params, {nocache: 1});
+  }
 
   // Cache GET-like calls
   const cacheKey = _cacheKey(params);
@@ -2492,10 +2501,11 @@ function switchTab(id) {
 // round trip, instead of a full page reload + re-bootstrap.
 let _refreshing = false;
 
-async function refreshCurrentTab() {
+async function refreshCurrentTab(bypassServerCache) {
   if (_refreshing) return;          // don't stack refreshes
   if (!currentUser || !token) return; // not logged in — nothing to refresh
   _refreshing = true;
+  if (bypassServerCache) _serverBypassUntil = Date.now() + 20000;
   const btn = document.getElementById('refresh-btn');
   if (btn) btn.classList.add('spinning');
   try {
@@ -2513,7 +2523,7 @@ async function refreshCurrentTab() {
 // Manual refresh (🔄 button) — also refreshes the bell so a notification that
 // arrived between polls shows up immediately.
 async function manualRefresh() {
-  await refreshCurrentTab();
+  await refreshCurrentTab(true);   // 🔄 = read straight from the sheet
   try { if (typeof checkNotifications === 'function') checkNotifications(); } catch(_) {}
 }
 
