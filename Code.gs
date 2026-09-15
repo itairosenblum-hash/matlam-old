@@ -116,14 +116,14 @@ function route(req) {
   if (action === 'getProfile') return {success: true, user};
   if (action === 'getConstraints') return actionGetConstraints(req, user);
   if (action === 'saveConstraints') return withAudit(user, 'הגשת אילוצים', String(req.month||'') + (req.targetName ? ' עבור ' + req.targetName : (req.viewAs ? ' עבור ' + req.viewAs : '')) + (Array.isArray(req.constraints) ? ' | X: ' + req.constraints.filter(function(c){return c==='X';}).length + ' | V: ' + req.constraints.filter(function(c){return c==='V';}).length : ''), actionSaveConstraints(req, user));
-  if (action === 'getSchedule') return actionGetSchedule(req, user);
+  if (action === 'getSchedule') return withReadMemo(function(){ return actionGetSchedule(req, user); });
   if (action === 'changePassword') return withAudit(user, 'שינוי סיסמה', String(user.username||''), actionChangePassword(req, user));
 
   // Available to all authenticated users
   if (action === 'getPeople') return actionGetPeople();
   if (action === 'submitSwap') return withAudit(user, 'בקשת החלפה', String(req.date||'') + ' ⇄ ' + String(req.withWho||'') + (req.note ? ' | הערה: ' + req.note : ''), actionSubmitSwap(req, user));
   if (action === 'getSwaps') return actionGetSwaps(req, user);
-  if (action === 'getScores') return actionGetScores(req); // all users can see scores
+  if (action === 'getScores') return withReadMemo(function(){ return actionGetScores(req); }); // all users can see scores
   if (action === 'getToraniHistory') return actionGetToraniHistory(req, user);
   if (action === 'getNotifications') return actionGetNotificationsPersonal(req, user);
   if (action === 'clearNotification') return actionClearNotification(req, user);
@@ -609,7 +609,7 @@ function actionGetScores(req) {
   // here. Both must be consulted, exactly as actionGenerateScheduleV2 does.
   const usersActiveByName = {}, usersRoleByName = {};
   try {
-    const uRows = getSheet(SH.USERS).getDataRange().getValues();
+    const uRows = sheetValues(getSheet(SH.USERS));
     for (let ui = 1; ui < uRows.length; ui++) {
       const un = String(uRows[ui][1] || '').trim();
       if (!un) continue;
@@ -622,7 +622,7 @@ function actionGetScores(req) {
   const baseScores = {};
   const scoreRowByName = {};   // name -> full Scores row (monthly type/score columns)
   const scoreSheet = getScoresSheet(SCORE_YEAR);
-  const scoreRows = scoreSheet.getDataRange().getValues();
+  const scoreRows = sheetValues(scoreSheet);
   for (let i = 1; i < scoreRows.length; i++) {
     if (!scoreRows[i][0]) continue;
     const sName = String(scoreRows[i][0]).trim();
@@ -648,7 +648,7 @@ function actionGetScores(req) {
     const monthCode = sheet.getName().replace('Schedule_',''); // e.g. '202606'
     const year = monthCode.substring(0,4);
     const mon = parseInt(monthCode.substring(4,6));
-    const rows = sheet.getDataRange().getValues();
+    const rows = sheetValues(sheet);
 
     // Headers: תאריך, יום, סוג יום, מבצע, עתודה א, עתודה ב, הערות, סוג תורנות, ניקוד, מבצע שני, עתודה א שנייה, עתודה ב שנייה
     for (let i = 1; i < rows.length; i++) {
@@ -1709,13 +1709,15 @@ function sheetValues(sh) {
   return _valMemo[k];
 }
 
-function actionGetAdminDashboard(req, user) {
+// Runs a read-only action with the per-request sheet memo enabled.
+function withReadMemo(fn) {
+  if (_valMemo) return fn();   // already inside a memo scope
   _valMemo = {};
-  try {
-    return _adminDashboardImpl(req, user);
-  } finally {
-    _valMemo = null;
-  }
+  try { return fn(); } finally { _valMemo = null; }
+}
+
+function actionGetAdminDashboard(req, user) {
+  return withReadMemo(function(){ return _adminDashboardImpl(req, user); });
 }
 
 function _adminDashboardImpl(req, user) {
